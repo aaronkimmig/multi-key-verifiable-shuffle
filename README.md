@@ -13,4 +13,4 @@ How to install and run:
 
 5. if you would like to run RoomServer.py on your own public server
 - consider the example nginx serverblock configuration that is built to be used with letsencrypt SSL certificates and expose RoomServer.py on your domain on a configurable path - adjust to your needs and install to the serverblock directory which usually is /etc/nginx/sites-available/
-- consider running it through the wrapper script RoomServer-Monitor-Default.sh which restarts the server every day at 3:30 am - just fill in your domain name and the path
+- consider running it through the wrapper script RoomServer-Monitor-Default.sh which restarts RoomServer.py every day at 3:30 am - just fill in your domain name and the path
