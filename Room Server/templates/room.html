@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>Crypto Inspector | {{room}}</title>
+</head>
+
+<body>
+    <h1>Room: {{room}}</h1>
+
+    <p><strong>Creator:</strong> <span id="creator">Loading ...</span></p>
+
+    <p><strong>Owner:</strong> <span id="owner">Loading ...</span></p>
+
+    <p><strong>Members:</strong> <span id="members">Loading ...</span></p>
+
+    <h2>CRS</h2>
+    <div id="crs">Loading ...</div>
+
+    <h2>Proof</h2>
+    <div id="proof">Loading ...</div>
+
+    <h3>Communication Cost</h3>
+    <div id="communication_cost">Loading ...</div>
+
+    <h3>Verification Results</h3>
+    <div id="verification_results">Loading ...</div>
+
+    <h3>Inspection Results</h3>
+    <div id="inspection_results">Loading ...</div>
+
+    <h2>Secret and miscellaneous data that has been revealed voluntarily</h2>
+    <p>This section is not part of the proof. This information was shared with the inspector voluntarily by members of room {{room}} for educational purposes.</p>
+    <div id="inspection">Loading ...</div>
+
+    <script>
+        const baseHttpUrl = "{{base_http_url}}";
+        const baseWsUrl = "{{base_ws_url}}";
+        const theRoom = "{{room}}";
+        const theRoomEnc = encodeURIComponent(theRoom);
+        function applyData(roomInfo) {
+            // creator
+            document.getElementById("creator").innerHTML = roomInfo["creator"];
+            // owner
+            document.getElementById("owner").innerHTML = roomInfo["ownership_type"];
+            // room members
+            var memberSpans = "";
+            var members = roomInfo["members"];
+            var i;
+            for (i = 0; i < members.length; i++) {
+                memberSpans += "<span style='margin-right: 0.5em'>" + members[i] + "</span>"
+            }
+            document.getElementById("members").innerHTML = memberSpans;
+            // variables in CRS, proof and roomInfo as well as verification results
+            var varCollectionName, vars, sep, div, p, varName, varVal, cost, aggregatedCostKeys, costKey, numberOfElements;
+            var varCollectionNames = ["crs", "proof", "verification_results", "inspection_results", "inspection"];
+            var varCollectionCost = [true, true, false, false, true];
+            var aggregatedCost = {};
+            var aggregatedCostOtherCount = 0;
+            var aggregatedCostOther = 0;
+            for (i = 0; i < varCollectionNames.length; i++) {
+                varCollectionName = varCollectionNames[i]
+                vars = roomInfo[varCollectionName];
+                varsHaveCost = varCollectionCost[i];
+                div = document.getElementById(varCollectionName);
+                div.innerHTML = "";
+                for (varName in vars) {
+                    p = document.createElement("p");
+                    varVal = vars[varName];
+                    cost = null;
+                    if (varName in roomInfo["variable_meta"]) {
+                        if ("cost" in roomInfo["variable_meta"][varName]) {
+                            cost = roomInfo["variable_meta"][varName]["cost"];
+                        }
+                    }
+                    p.innerHTML = "<strong>" + varName + (
+                        varsHaveCost ? (
+                            cost != null ? 
+                                " <em>(" + cost + ")</em> ="
+                            :
+                                " ="
+                            )
+                        :
+                            ":"
+                        ) + "</strong> " + varVal;
+                    if (cost !== null) {
+                        var variableWeight = 1;
+                        try {
+                            varVal = JSON.parse(varVal);
+                        } catch (e) {}
+                        if (Array.isArray(varVal)) {
+                            variableWeight = varVal.length;
+                        } else if (varVal.constructor == Object) {
+                            variableWeight = Object.keys(varVal).length;
+                        }
+                        if (typeof cost == "string") {
+                            if (cost in aggregatedCost) {
+                                aggregatedCost[cost] += variableWeight;
+                            } else {
+                                aggregatedCost[cost] = variableWeight;
+                            }
+                        } else if (typeof cost == "number") {
+                            if (cost >= 0) {
+                                aggregatedCostOtherCount += variableWeight;
+                                aggregatedCostOther += cost * variableWeight;
+                            } else {
+                                console.warn("negative cost " + cost + " for variable " + varName + ". Ignoring.");
+                            }
+                        }
+                    }
+                    div.appendChild(p);
+                }
+            }
+            // communication cost
+            div = document.getElementById("communication_cost");
+            div.innerHTML = "";
+            aggregatedCostKeys = Object.keys(aggregatedCost);
+            var costSpecification = {};
+            var costMissing = 0;
+            var keyBits = -1;
+            var totalBits = 0;
+            if ("security_parameters" in roomInfo["setup"]) {
+                costSpecification = roomInfo["setup"]["security_parameters"];
+            }
+            for (i = 0; i < aggregatedCostKeys.length; i++) {
+                costKey = aggregatedCostKeys[i];
+                numberOfElements = aggregatedCost[costKey];
+                keyBits = -1;
+                if (costKey in costSpecification) {
+                    keyBits = costSpecification[costKey] * numberOfElements;
+                    totalBits += keyBits;
+                } else {
+                    costMissing += numberOfElements;
+                }
+                p = document.createElement("p");
+                p.innerHTML = "<strong>" + costKey + ":</strong> " + numberOfElements + " elements" + (keyBits == -1 ? "" : " (" + keyBits + " bits)");
+                div.appendChild(p);
+            }
+            var costMissingNote = "";
+            if (costMissing > 0) {
+                costMissingNote = " <em>(excluding " + costMissing + " variable(s) with unknown cost)</em>";
+            }
+            if (aggregatedCostOtherCount > 0) {
+                p = document.createElement("p");
+                p.innerHTML = "<strong><em>other:</em></strong> " + aggregatedCostOtherCount + " elements (" + aggregatedCostOther + " bits)";
+                div.appendChild(p);
+            }
+            p = document.createElement("p");
+            p.innerHTML = "<strong><em>total</em></strong>" + costMissingNote + "<strong>:</strong> " + totalBits + " bits";
+            div.appendChild(p);
+        }
+        // socket data
+        const socket = new WebSocket(baseWsUrl + "/inspect/" + theRoomEnc);
+        socket.binaryType = "arraybuffer";
+        var roomInfo = null;
+        socket.addEventListener("message", event => {
+            var data = event.data;
+            if (event.data instanceof ArrayBuffer) {
+                console.error("Malformed data (expected text but received binary data)", data);
+                return;
+            }
+            roomInfo = {};
+            try {
+                roomInfo = JSON.parse(data);
+                if (typeof roomInfo !== "object" || Array.isArray(roomInfo)) {
+                    console.error("Malformed data (expected dictionary with roomInfo data):", data);
+                    return;
+                }
+            } catch (e) {
+                console.error("Malformed data (expected dictionary with roomInfo data):", e, data);
+                return;
+            }
+            applyData(roomInfo);
+        });
+        window.onbeforeunload = function () {
+            socket.onclose = function () {};
+            socket.close();
+        };
+    </script>
+</body>
+
+</html>

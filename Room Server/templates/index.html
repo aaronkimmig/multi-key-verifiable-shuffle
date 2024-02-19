@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>Crypto Inspector | Rooms</title>
+</head>
+
+<body>
+    <h1>Rooms</h1>
+    <p>To create a new room, connect to the router running on this server, authorize, and send the action command.</p>
+    <ul id="rooms">
+        <!--
+        {% for room_name in rooms %}
+            <li><a href="{{base_http_url}}/{{room_name}}">{{room_name}}</a></li>
+        {% endfor %}
+        -->
+    </ul>
+
+    <script>
+        const baseHttpUrl = "{{base_http_url}}";
+        const baseWsUrl = "{{base_ws_url}}";
+        function applyData(rooms) {
+            var ul = document.getElementById("rooms");
+            ul.innerHTML = "";
+            for (var i = 0; i < rooms.length; i++) {
+                var room = rooms[i];
+                var roomEnc = encodeURIComponent(room);
+                var li = document.createElement("li");
+                li.innerHTML = "<a href=\"" + baseHttpUrl + "/" + roomEnc + "\">" + room + "</a>"
+                ul.appendChild(li);
+            }
+        }
+        // socket data
+        const socket = new WebSocket(baseWsUrl + "/rooms");
+        socket.binaryType = "arraybuffer";
+        socket.addEventListener("message", event => {
+            var data = event.data;
+            if (event.data instanceof ArrayBuffer) {
+                console.error("Malformed data (expected text but received binary data)", data);
+                return;
+            }
+            var rooms = [];
+            try {
+                rooms = JSON.parse(data);
+                if (!Array.isArray(rooms)) {
+                    console.error("Malformed data (expected list of room names):", data);
+                    return;
+                }
+            } catch (e) {
+                console.error("Malformed data (expected list of room names):", e, data);
+                return;
+            }
+            applyData(rooms);
+        });
+        window.onbeforeunload = function () {
+            socket.onclose = function () {};
+            socket.close();
+        };
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,8 @@
+Windows:
+
+copy files to ~\AppData\Roaming\Mathematica\Applications
+
+
+MacOS:
+
+copy files to ~/Library/Mathematica/Applications
